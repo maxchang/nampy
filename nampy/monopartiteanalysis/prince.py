@@ -1,3 +1,8 @@
+import multiprocessing
+from scipy import array
+from numpy import sqrt, zeros, dot
+import numpy
+
 def prince(the_network, **kwargs):
     """
     Based on Vanunu, O., Magger, O., Ruppin, E., Shlomi, T., & Sharan, R. (2010). 
@@ -36,8 +41,7 @@ def prince(the_network, **kwargs):
 
 
     """
-    from scipy import array
-    from numpy import sqrt, zeros, dot
+
     continue_flag = True
     
     if len(the_network.nodetypes) != 1:
@@ -140,22 +144,12 @@ def prince(the_network, **kwargs):
                 print("Running permutations...")
             from time import time
             start_time = time()
-            from numpy.random import shuffle
             the_values = initial_source_dict.values()
+
+            worker_pool = multiprocessing.Pool()
+
             for permutation_index in range(0, n_permutations):
-                shuffle(the_values)
-                for i, the_node in enumerate(the_network.nodetypes[0].nodes):
-                    ft1[i] = the_values[i]
-                    y[i] = ft1[i] * (1.0 - alpha)
-                ft = zeros((the_dim, 1))
-                continue_propagation = True
-                while continue_propagation:
-                    ft = alpha * dot(w_prime, ft1) + y
-                    if (abs(ft - ft1)).sum() < l1norm_cutoff:
-                        continue_propagation = False
-                    else:
-                        ft1 = ft
-                ft = 1. * dot(w_prime, ft)
+                ft = run_permutation(the_network, the_values, w_prime)
                 for i, the_node in enumerate(the_network.nodetypes[0].nodes):
                     permutation_dict[the_node.id].append(ft[i,0])
                 if verbose:
@@ -164,6 +158,26 @@ def prince(the_network, **kwargs):
     
     return result_dict, permutation_dict
 
+def run_permutation(the_network, the_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
+    the_dim = len(the_network.nodetypes[0].nodes)
+    ft1 = zeros((the_dim, 1))
+    y = zeros((the_dim, 1))
+    current_values = numpy.random.permutation(the_values)
+
+    for i, the_node in enumerate(the_network.nodetypes[0].nodes):
+        ft1[i] = current_values[i]
+        y[i] = ft1[i] * (1.0 - alpha)
+    ft = zeros((the_dim, 1))
+    continue_propagation = True
+    while continue_propagation:
+        ft = alpha * dot(w_prime, ft1) + y
+        if (abs(ft - ft1)).sum() < l1norm_cutoff:
+            continue_propagation = False
+        else:
+            ft1 = ft
+    ft = 1. * dot(w_prime, ft)
+
+    return ft
 
 def save_prince_result(the_network, result_dict, permutation_dict, filename, path = ""):
     """ Save PRINCE results to files in a space-conscious format.
