@@ -146,28 +146,36 @@ def prince(the_network, **kwargs):
             start_time = time()
             the_values = initial_source_dict.values()
 
+            # Create a pool of worker processes and use it to run permutation test asynchronously
             worker_pool = multiprocessing.Pool()
-
+            result_list = []
             for permutation_index in range(0, n_permutations):
-                ft = run_permutation(the_network, the_values, w_prime)
+                result_list.append(worker_pool.apply_async(run_permutation, [the_values, w_prime]))
+
+            worker_pool.close()
+            worker_pool.join()
+
+            for result in result_list:
+                ft = result.get()
                 for i, the_node in enumerate(the_network.nodetypes[0].nodes):
                     permutation_dict[the_node.id].append(ft[i,0])
-                if verbose:
-                    if (permutation_index + 1) % 100 == 0:
-                        print "Completed %i of %i permutations, el %f hr." %((permutation_index + 1), n_permutations, ((time() - start_time)/3600.))
+
+                # would need to implement a shared counter for progress tracking
+                # if verbose:
+                #     if (permutation_index + 1) % 100 == 0:
+                #         print "Completed %i of %i permutations, el %f hr." %((permutation_index + 1), n_permutations, ((time() - start_time)/3600.))
     
     return result_dict, permutation_dict
 
-def run_permutation(the_network, the_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
-    the_dim = len(the_network.nodetypes[0].nodes)
-    ft1 = zeros((the_dim, 1))
-    y = zeros((the_dim, 1))
-    current_values = numpy.random.permutation(the_values)
+def run_permutation(source_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
+    """ Execute a single run of the PRINCE algorithm with permuted source values.
+    Arguments:
+        source_values:
+        w_prime:
+    """
+    ft1 = array(numpy.random.permutation(source_values), ndmin=2).T
+    y = ft1 * (1.0 - alpha)
 
-    for i, the_node in enumerate(the_network.nodetypes[0].nodes):
-        ft1[i] = current_values[i]
-        y[i] = ft1[i] * (1.0 - alpha)
-    ft = zeros((the_dim, 1))
     continue_propagation = True
     while continue_propagation:
         ft = alpha * dot(w_prime, ft1) + y
@@ -254,4 +262,3 @@ def load_prince_result(the_network, filename, path = ""):
 
 
 
-    
