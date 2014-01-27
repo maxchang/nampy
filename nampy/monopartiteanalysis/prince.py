@@ -39,6 +39,7 @@ def prince(the_network, **kwargs):
      n_permutations number of randomizations for the algorithm in addition
       to the initial run.  Helps to estimate the background distribution.
      l1norm_cutoff: numerical tolerance for convergence
+     num_processes: number of independent processes used for permutation testing
 
     Returns:
      propagation_score: a dict of {node_id: scores}
@@ -92,6 +93,11 @@ def prince(the_network, **kwargs):
         else:
             # Could go for 1E-7 but i didn't see any difference
             l1norm_cutoff = 1E-6
+
+        if 'num_processes' in kwargs:
+            num_processes = kwargs['num_processes']
+        else:
+            num_processes = 1
 
         if verbose:
             print "Running PRINCE."
@@ -157,11 +163,14 @@ def prince(the_network, **kwargs):
 
             # Create a pool of worker processes and use it to run permutation test asynchronously
             worker_pool = multiprocessing.Pool()
-            permutation_chunksize = int(n_permutations/multiprocessing.cpu_count())
-            #TODO: adjust chunksize in case division is not even
+            permutation_chunksize = int(numpy.ceil(float(n_permutations)/num_processes))
+            remaining_jobs = n_permutations
             result_list = []
-            for permutation_index in range(0, multiprocessing.cpu_count()):
+            for permutation_index in range(num_processes):
                 result_list.append(worker_pool.apply_async(run_permutation, [permutation_chunksize]))
+                # adjust chunksize to avoid running excess permutations
+                remaining_jobs -= permutation_chunksize
+                if permutation_chunksize > remaining_jobs: permutation_chunksize = remaining_jobs
 
             # close pool and wait for jobs to finish if progress isn't being watched
             if not verbose:
