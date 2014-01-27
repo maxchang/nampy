@@ -3,7 +3,10 @@ from scipy import array
 from numpy import sqrt, zeros, dot
 import numpy
 
+# Global variables to make multiprocessing more efficient
 counter = None
+w_prime = None
+source_values = None
 
 def prince(the_network, **kwargs):
     """
@@ -36,6 +39,7 @@ def prince(the_network, **kwargs):
      n_permutations number of randomizations for the algorithm in addition
       to the initial run.  Helps to estimate the background distribution.
      l1norm_cutoff: numerical tolerance for convergence
+     num_processes: number of independent processes used for permutation testing
 
     Returns:
      propagation_score: a dict of {node_id: scores}
@@ -90,6 +94,11 @@ def prince(the_network, **kwargs):
             # Could go for 1E-7 but i didn't see any difference
             l1norm_cutoff = 1E-6
 
+        if 'num_processes' in kwargs:
+            num_processes = kwargs['num_processes']
+        else:
+            num_processes = 1
+
         if verbose:
             print "Running PRINCE."
 
@@ -99,6 +108,7 @@ def prince(the_network, **kwargs):
 
         # Better to perform computations on dense
         # Note orphan nodes can cause an issue
+        global w_prime
         w_prime = the_matrix.todense() / the_norm
         if verbose:
             print "W' done."
@@ -148,13 +158,19 @@ def prince(the_network, **kwargs):
             start_time = time()
             global counter
             counter = multiprocessing.Value('i', 0)
-            the_values = initial_source_dict.values()
+            global source_values
+            source_values = initial_source_dict.values()
 
             # Create a pool of worker processes and use it to run permutation test asynchronously
             worker_pool = multiprocessing.Pool()
+            permutation_chunksize = int(numpy.ceil(float(n_permutations)/num_processes))
+            remaining_jobs = n_permutations
             result_list = []
-            for permutation_index in range(0, n_permutations):
-                result_list.append(worker_pool.apply_async(run_permutation, [the_values, w_prime]))
+            for permutation_index in range(num_processes):
+                result_list.append(worker_pool.apply_async(run_permutation, [permutation_chunksize]))
+                # adjust chunksize to avoid running excess permutations
+                remaining_jobs -= permutation_chunksize
+                if permutation_chunksize > remaining_jobs: permutation_chunksize = remaining_jobs
 
             # close pool and wait for jobs to finish if progress isn't being watched
             if not verbose:
@@ -162,46 +178,57 @@ def prince(the_network, **kwargs):
                 worker_pool.join()
 
             for result in result_list:
+                permutation_list = None
                 if verbose:
-                    # if results are not ready, wait one second and output progress
-                    try:
-                        ft = result.get(timeout = 1.0)
-                    except multiprocessing.TimeoutError:
-                        print "Completed %i of %i permutations, el %f hr." %((counter.value + 1), n_permutations, ((time() - start_time)/3600.))
-                        continue
+                    while permutation_list == None:
+                        # if results are not ready, wait and output progress
+                        try:
+                            permutation_list = result.get(timeout = 10.0)
+                        except multiprocessing.TimeoutError:
+                            print "Completed %i of %i permutations, el %f hr." %(counter.value, n_permutations, ((time() - start_time)/3600.))
+                            continue
                 else:
-                    ft = result.get()
+                    permutation_list = result.get()
 
-                for i, the_node in enumerate(the_network.nodetypes[0].nodes):
-                    permutation_dict[the_node.id].append(ft[i,0])
+                for ft in permutation_list:
+                    for i, the_node in enumerate(the_network.nodetypes[0].nodes):
+                        permutation_dict[the_node.id].append(ft[i,0])
     
     return result_dict, permutation_dict
 
-def run_permutation(source_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
+def run_permutation(num_permutations, alpha=0.8, l1norm_cutoff=1e-6):
     """ Execute a single run of the PRINCE algorithm with permuted source values.
     Arguments:
         source_values:
         w_prime:
+        num_permutations:
     Returns:
         ft: converged values
     """
-    ft1 = array(numpy.random.permutation(source_values), ndmin=2).T
-    y = ft1 * (1.0 - alpha)
+    permutation_list = []
+    global source_values
+    global w_prime
 
-    continue_propagation = True
-    while continue_propagation:
-        ft = alpha * dot(w_prime, ft1) + y
-        if (abs(ft - ft1)).sum() < l1norm_cutoff:
-            continue_propagation = False
-        else:
-            ft1 = ft
-    ft = 1. * dot(w_prime, ft)
+    for i in range(num_permutations):
+        ft1 = array(numpy.random.permutation(source_values), ndmin=2).T
+        y = ft1 * (1.0 - alpha)
 
-    global counter
-    with counter.get_lock():
-        counter.value += 1
+        continue_propagation = True
+        while continue_propagation:
+            ft = alpha * dot(w_prime, ft1) + y
+            if (abs(ft - ft1)).sum() < l1norm_cutoff:
+                continue_propagation = False
+            else:
+                ft1 = ft
+        ft = 1. * dot(w_prime, ft)
 
-    return ft
+        permutation_list.append(ft)
+
+        global counter
+        with counter.get_lock():
+            counter.value += 1
+
+    return permutation_list
 
 def save_prince_result(the_network, result_dict, permutation_dict, filename, path = ""):
     """ Save PRINCE results to files in a space-conscious format.
