@@ -169,7 +169,7 @@ def prince(the_network, **kwargs):
                         try:
                             ft = result.get(timeout = 1.0)
                         except multiprocessing.TimeoutError:
-                            print "Completed %i of %i permutations, el %f hr." %((counter.value + 1), n_permutations, ((time() - start_time)/3600.))
+                            print "Completed %i of %i permutations, el %f hr." %(counter.value, n_permutations, ((time() - start_time)/3600.))
                             continue
                 else:
                     ft = result.get()
