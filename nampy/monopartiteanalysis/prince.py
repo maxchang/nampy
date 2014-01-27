@@ -3,7 +3,10 @@ from scipy import array
 from numpy import sqrt, zeros, dot
 import numpy
 
+# Global variables to make multiprocessing more efficient
 counter = None
+w_prime = None
+source_values = None
 
 def prince(the_network, **kwargs):
     """
@@ -99,6 +102,7 @@ def prince(the_network, **kwargs):
 
         # Better to perform computations on dense
         # Note orphan nodes can cause an issue
+        global w_prime
         w_prime = the_matrix.todense() / the_norm
         if verbose:
             print "W' done."
@@ -148,7 +152,8 @@ def prince(the_network, **kwargs):
             start_time = time()
             global counter
             counter = multiprocessing.Value('i', 0)
-            the_values = initial_source_dict.values()
+            global source_values
+            source_values = initial_source_dict.values()
 
             # Create a pool of worker processes and use it to run permutation test asynchronously
             worker_pool = multiprocessing.Pool()
@@ -156,7 +161,7 @@ def prince(the_network, **kwargs):
             #TODO: adjust chunksize in case division is not even
             result_list = []
             for permutation_index in range(0, multiprocessing.cpu_count()):
-                result_list.append(worker_pool.apply_async(run_permutation, [the_values, w_prime, permutation_chunksize]))
+                result_list.append(worker_pool.apply_async(run_permutation, [permutation_chunksize]))
 
             # close pool and wait for jobs to finish if progress isn't being watched
             if not verbose:
@@ -182,7 +187,7 @@ def prince(the_network, **kwargs):
     
     return result_dict, permutation_dict
 
-def run_permutation(source_values, w_prime, num_permutations, alpha=0.8, l1norm_cutoff=1e-6):
+def run_permutation(num_permutations, alpha=0.8, l1norm_cutoff=1e-6):
     """ Execute a single run of the PRINCE algorithm with permuted source values.
     Arguments:
         source_values:
@@ -192,6 +197,8 @@ def run_permutation(source_values, w_prime, num_permutations, alpha=0.8, l1norm_
         ft: converged values
     """
     permutation_list = []
+    global source_values
+    global w_prime
 
     for i in range(num_permutations):
         ft1 = array(numpy.random.permutation(source_values), ndmin=2).T
