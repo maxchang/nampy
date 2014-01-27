@@ -2,6 +2,7 @@ from .. core.Edge import Edge
 from .. core.Node import Node
 from .. core.NodeType import NodeType
 from .. core.Network import Network
+from ..core.shared_functions import test_kwarg
 
 saved_node_attribute_list = ['notes', 'annotation', 'source', '_nodetype']
 saved_edge_attribute_list = ['weight', 'notes', 'annotation']
@@ -88,11 +89,7 @@ def load_pickled_network(filename, **kwargs):
     else:
         path = ""
 
-    if 'verbose' in kwargs:
-        verbose = kwargs['verbose']
-    else:
-        verbose = False
-    
+    verbose = test_kwarg('verbose', kwargs, [False, True])
 
     if verbose:
         print 'Loading network file %s ...' %(path + filename + ".pickle")
@@ -165,10 +162,7 @@ def create_network_model_from_textfile(network_id, network_file, **kwargs):
 
     """
 
-    if 'verbose' in kwargs:
-        verbose = kwargs['verbose']
-    else:
-        verbose = False
+    verbose = test_kwarg('verbose', kwargs, [False, True])
 
     if verbose:
         print "Reading the network file..."
@@ -246,6 +240,7 @@ def create_source_dict_from_textfile(source_file, **kwargs):
         print('Cannot load the source file.  Exiting...')
         continue_flag = False
 
+    source_dict = {}
     if continue_flag:
         source_dict = {}
         for the_entry in the_list:
@@ -294,10 +289,7 @@ def read_table_file_to_dict(filename, **kwargs):
     else:
         commentchar = ""
 
-    if 'force_to_float' in kwargs:
-        force_to_float = kwargs['force_to_float']
-    else:
-        force_to_float = True
+    force_to_float = test_kwarg('force_to_float', kwargs, [True, False])
     
     fp = open(filename, 'rU')
     the_list = fp.readlines()
