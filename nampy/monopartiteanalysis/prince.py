@@ -162,13 +162,15 @@ def prince(the_network, **kwargs):
                 worker_pool.join()
 
             for result in result_list:
+                ft = None
                 if verbose:
-                    # if results are not ready, wait one second and output progress
-                    try:
-                        ft = result.get(timeout = 1.0)
-                    except multiprocessing.TimeoutError:
-                        print "Completed %i of %i permutations, el %f hr." %((counter.value + 1), n_permutations, ((time() - start_time)/3600.))
-                        continue
+                    while ft == None:
+                        # if results are not ready, wait one second and output progress
+                        try:
+                            ft = result.get(timeout = 1.0)
+                        except multiprocessing.TimeoutError:
+                            print "Completed %i of %i permutations, el %f hr." %((counter.value + 1), n_permutations, ((time() - start_time)/3600.))
+                            continue
                 else:
                     ft = result.get()
 
