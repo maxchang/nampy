@@ -3,6 +3,8 @@ from scipy import array
 from numpy import sqrt, zeros, dot
 import numpy
 
+counter = None
+
 def prince(the_network, **kwargs):
     """
     Based on Vanunu, O., Magger, O., Ruppin, E., Shlomi, T., & Sharan, R. (2010). 
@@ -144,6 +146,8 @@ def prince(the_network, **kwargs):
                 print("Running permutations...")
             from time import time
             start_time = time()
+            global counter
+            counter = multiprocessing.Value('i', 0)
             the_values = initial_source_dict.values()
 
             # Create a pool of worker processes and use it to run permutation test asynchronously
@@ -152,18 +156,24 @@ def prince(the_network, **kwargs):
             for permutation_index in range(0, n_permutations):
                 result_list.append(worker_pool.apply_async(run_permutation, [the_values, w_prime]))
 
-            worker_pool.close()
-            worker_pool.join()
+            # close pool and wait for jobs to finish if progress isn't being watched
+            if not verbose:
+                worker_pool.close()
+                worker_pool.join()
 
             for result in result_list:
-                ft = result.get()
+                if verbose:
+                    # if results are not ready, wait one second and output progress
+                    try:
+                        ft = result.get(timeout = 1.0)
+                    except multiprocessing.TimeoutError:
+                        print "Completed %i of %i permutations, el %f hr." %((counter.value + 1), n_permutations, ((time() - start_time)/3600.))
+                        continue
+                else:
+                    ft = result.get()
+
                 for i, the_node in enumerate(the_network.nodetypes[0].nodes):
                     permutation_dict[the_node.id].append(ft[i,0])
-
-                # would need to implement a shared counter for progress tracking
-                # if verbose:
-                #     if (permutation_index + 1) % 100 == 0:
-                #         print "Completed %i of %i permutations, el %f hr." %((permutation_index + 1), n_permutations, ((time() - start_time)/3600.))
     
     return result_dict, permutation_dict
 
@@ -172,6 +182,8 @@ def run_permutation(source_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
     Arguments:
         source_values:
         w_prime:
+    Returns:
+        ft: converged values
     """
     ft1 = array(numpy.random.permutation(source_values), ndmin=2).T
     y = ft1 * (1.0 - alpha)
@@ -184,6 +196,10 @@ def run_permutation(source_values, w_prime, alpha=0.8, l1norm_cutoff=1e-6):
         else:
             ft1 = ft
     ft = 1. * dot(w_prime, ft)
+
+    global counter
+    with counter.get_lock():
+        counter.value += 1
 
     return ft
 
